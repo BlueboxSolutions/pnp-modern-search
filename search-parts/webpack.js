@@ -1,11 +1,13 @@
 const path = require("path");
+const fs = require("fs");
 const webpack = require("webpack");
 const resolve = require("path").resolve;
 const CertStore = require("@microsoft/gulp-core-build-serve/lib/CertificateStore");
 const CertificateStore = CertStore.CertificateStore || CertStore.default;
 const ForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");
 const del = require("del");
-const host = "https://localhost:4321";
+const port = 4321;
+const host = "https://localhost:" + port;
 
 ///
 // Transforms define("<guid>", ...) to web part specific define("<web part id_version", ...)
@@ -13,17 +15,17 @@ const host = "https://localhost:4321";
 ///
 class DynamicLibraryPlugin {
   constructor(options) {
-    this.options = options;
+    this.opitons = options;
   }
 
   apply(compiler) {
     compiler.hooks.emit.tap("DynamicLibraryPlugin", compilation => {
-      for (const assetId in this.options.modulesMap) {
-        const moduleMap = this.options.modulesMap[assetId];
+      for (const assetId in this.opitons.modulesMap) {
+        const moduleMap = this.opitons.modulesMap[assetId];
 
         if (compilation.assets[assetId]) {
           const rawValue = compilation.assets[assetId].children[0]._value;
-          compilation.assets[assetId].children[0]._value = rawValue.replace(this.options.libraryName, moduleMap.id + "_" + moduleMap.version);
+          compilation.assets[assetId].children[0]._value = rawValue.replace(this.opitons.libraryName, moduleMap.id + "_" + moduleMap.version);
         }
       }
     });
@@ -57,9 +59,6 @@ let baseConfig = {
   target: "web",
   mode: "development",
   devtool: "source-map",
-  node: {
-    fs: "empty"
-  },
   resolve: {
     extensions: [".ts", ".tsx", ".js"],
     modules: ["node_modules"]
@@ -67,13 +66,6 @@ let baseConfig = {
   context: path.resolve(__dirname),
   module: {
     rules: [
-      {
-        test: /utils\.js$/,
-        loader: "unlazy-loader",
-        include: [
-          /node_modules/,
-        ]
-      },
       {
         test: /\.tsx?$/,
         loader: "ts-loader",
@@ -92,7 +84,7 @@ let baseConfig = {
             name: "[name:lower]_[hash].[ext]"
           }
         }],
-        test: /.(jpg|png|woff|eot|ttf|svg|gif|dds)((\\?|\\#).+)?$/
+        test: /\.(jpe?g|png|woff|eot|ttf|svg|gif|dds)$/i
       },
       {
         use: [{
@@ -109,7 +101,9 @@ let baseConfig = {
               async: true
             }
           },
-          "css-loader"
+          {
+            loader: "css-loader"
+          }
         ]
       },
       {
@@ -167,20 +161,21 @@ let baseConfig = {
     contentBase: resolve(__dirname),
     publicPath: host + "/dist/",
     host: "localhost",
-    port: 4321,
+    port: port,
     disableHostCheck: true,
     historyApiFallback: true,
     open: true,
+    writeToDisk: false,
     openPage: host + "/temp/workbench.html",
     stats: {
       preset: "errors-only",
       colors: true,
-      assets: false,
       chunks: false,
-      modules: false
+      modules: false,
+      assets: false
     },
     proxy: { // url re-write for resources to be served directly from src folder
-      "/lib/webparts/**/loc/*.js": {
+      "/lib/**/loc/*.js": {
         target: host,
         pathRewrite: { "^/lib": "/src" },
         secure: false
@@ -197,33 +192,21 @@ let baseConfig = {
 }
 
 const createConfig = function () {
-  // remove old css module TypeScript definitions and dist folder for source maps to work correctly
-  del.sync(["dist/*.*"]);
+  // remove old css module TypeScript definitions
+  del.sync(["dist/*.js", "dist/*.map"]);
 
   // we need only "externals", "output" and "entry" from the original webpack config
   let originalWebpackConfig = require("./temp/_webpack_config.json");
   baseConfig.externals = originalWebpackConfig.externals;
   baseConfig.output = originalWebpackConfig.output;
 
-  // fix: ".js" entry needs to be ".ts"
-  // also replaces the path form /lib/* to /src/*
-  let newEntry = {};
-  const pathToSearch = path.sep + "lib" + path.sep;
-  const pathToReplace = path.sep + "src" + path.sep;
-  const originalEntries = Object.keys(originalWebpackConfig.entry);
-
-  for (const key in originalWebpackConfig.entry) {
-    let entry = originalWebpackConfig.entry[key];
-    entry = entry.replace(pathToSearch, pathToReplace).slice(0, -3) + ".ts";
-    newEntry[key] = entry;
-  }
-
-  baseConfig.entry = newEntry;
+  baseConfig.entry = getEntryPoints(originalWebpackConfig.entry);
 
   baseConfig.output.publicPath = host + "/dist/";
 
   const manifest = require("./temp/manifests.json");
   const modulesMap = {};
+  const originalEntries = Object.keys(originalWebpackConfig.entry);
 
   for (const jsModule of manifest) {
     if (jsModule.loaderConfig
@@ -242,6 +225,35 @@ const createConfig = function () {
   }));
 
   return baseConfig;
+}
+
+function getEntryPoints(entry) {
+  // fix: ".js" entry needs to be ".ts"
+  // also replaces the path form /lib/* to /src/*
+  let newEntry = {};
+  let libSearchRegexp;
+  if (path.sep === "/") {
+    libSearchRegexp = /\/lib\//gi;
+  } else {
+    libSearchRegexp = /\\lib\\/gi;
+  }
+
+  const srcPathToReplace = path.sep + "src" + path.sep;
+
+  for (const key in entry) {
+    let entryPath = entry[key];
+    if (entryPath.indexOf("bundle-entries") === -1) {
+      entryPath = entryPath.replace(libSearchRegexp, srcPathToReplace).slice(0, -3) + ".ts";
+    } else {
+      // replace paths and extensions in bundle file
+      let bundleContent = fs.readFileSync(entryPath).toString();
+      bundleContent = bundleContent.replace(libSearchRegexp, srcPathToReplace).replace(/\.js/gi, ".ts");
+      fs.writeFileSync(entryPath, bundleContent);
+    }
+    newEntry[key] = entryPath;
+  }
+
+  return newEntry;
 }
 
 module.exports = createConfig();

@@ -168,7 +168,7 @@ export default class SearchRefinersWebPart extends BaseClientSideWebPart<ISearch
 
     protected onInit(): Promise<void> {
 
-
+        console.log("Search Refiners OnInit");
         // Disable PnP Telemetry
         const telemetry = PnPTelemetry.getInstance();
         if (telemetry.optOut) telemetry.optOut();
@@ -354,6 +354,13 @@ export default class SearchRefinersWebPart extends BaseClientSideWebPart<ISearch
                 },
                 text: 'Vertical',
                 key: RefinersLayoutOption.Vertical,
+            },
+            {
+                iconProps: {
+                    officeFabricIconFontName: 'GripperBarHorizontal'
+                },
+                text: 'Horizontal',
+                key: RefinersLayoutOption.Horizontal,
             },
             {
                 iconProps: {

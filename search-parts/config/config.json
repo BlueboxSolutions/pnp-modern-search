@@ -35,7 +35,12 @@
       ]
     }
   },
-  "externals": {},
+  "externals": {
+    "jquery": {
+      "path": "https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js",
+      "globalName": "jQuery"
+   }
+  },
   "localizedResources": {
     "SearchResultsWebPartStrings": "lib/webparts/searchResults/loc/{locale}.js",
     "SearchBoxWebPartStrings": "lib/webparts/searchBox/loc/{locale}.js",
